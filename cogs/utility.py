@@ -50,6 +50,29 @@ class Utility(commands.Cog):
         self.bot = bot
 
     # ------------------------------------------------------------------
+    # ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    async def _reply_failure(interaction: discord.Interaction, text: str) -> None:
+        """Отправить ephemeral-ошибку независимо от состояния interaction.
+
+        Если бот уже успел ответить (например, подтверждение отправлено, а
+        сама отправка в канал упала) — используем followup.send. Это чинит
+        падение «Interaction already responded», из-за которого /ping и
+        некоторые другие команды выглядели «не работающими» на хостинге.
+        """
+        embed = error_embed(text)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+        except discord.HTTPException:
+            # Interaction истёк — остаётся только запись в лог вызывающей команды.
+            log.warning("Не удалось отправить сообщение об ошибке: interaction недоступен")
+
+    # ------------------------------------------------------------------
     # /poll
     # ------------------------------------------------------------------
 
@@ -135,24 +158,23 @@ class Utility(commands.Cog):
     ) -> None:
         try:
             target_channel = channel or interaction.channel
-            await target_channel.send(message)
-            # Подтверждение — только автору, чтобы не спамить в канал.
+            # ВАЖНО (фикс «двойного сообщения»): подтверждающий ответ
+            # отправляем ПЕРВЫМ и ephemeral=True. В Discord ephemeral-ответ
+            # виден только автору команды, поэтому в канале оказывается ровно
+            # одно сообщение — само say. Раньше порядок был обратный и любой
+            # сбой/ретрай клиента выглядел как дубль.
             await interaction.response.send_message(
                 embed=success_embed(f"Сообщение отправлено в {target_channel.mention}."),
                 ephemeral=True,
             )
+            await target_channel.send(message)
             log.info("SAY: %s -> #%s", interaction.user, getattr(target_channel, 'name', '?'))
         except discord.Forbidden:
-            await interaction.response.send_message(
-                embed=error_embed("Бот не может писать в этот канал (нет прав Send Messages)."),
-                ephemeral=True,
-            )
+            # Канал недоступен боту (нет Send Messages / Write perms).
+            await self._reply_failure(interaction, "Бот не может писать в этот канал (нет прав Send Messages).")
         except Exception:
             log.exception("Ошибка в /say")
-            await interaction.response.send_message(
-                embed=error_embed("Произошла непредвиденная ошибка. Подробности в логах."),
-                ephemeral=True,
-            )
+            await self._reply_failure(interaction, "Произошла непредвиденная ошибка. Подробности в логах.")
 
     # ------------------------------------------------------------------
     # /embed
@@ -174,7 +196,7 @@ class Utility(commands.Cog):
         interaction: discord.Interaction,
         title: app_commands.Range[str, 1, 256],
         description: app_commands.Range[str, 1, 4096],
-        color: app_commands.Choice[str] = None,  # type: ignore[assignment]
+        color: app_commands.Choice[str] | None = None,
         channel: discord.TextChannel | None = None,
     ) -> None:
         try:
@@ -183,24 +205,20 @@ class Utility(commands.Cog):
 
             emb = make_embed(title, description, chosen,
                              footer=f"Отправлено через /embed • {interaction.user.display_name}")
-            await target_channel.send(embed=emb)
+            # Тот же фикс: сначала ephemeral-подтверждение автору, затем сам
+            # embed в канал — итого ровно одно публичное сообщение.
             await interaction.response.send_message(
                 embed=success_embed(f"Embed отправлен в {target_channel.mention}."),
                 ephemeral=True,
             )
+            await target_channel.send(embed=emb)
             log.info("EMBED: %s -> #%s | «%s»", interaction.user,
                      getattr(target_channel, 'name', '?'), title)
         except discord.Forbidden:
-            await interaction.response.send_message(
-                embed=error_embed("Бот не может писать в этот канал (нет прав)."),
-                ephemeral=True,
-            )
+            await self._reply_failure(interaction, "Бот не может писать в этот канал (нет прав).")
         except Exception:
             log.exception("Ошибка в /embed")
-            await interaction.response.send_message(
-                embed=error_embed("Произошла непредвиденная ошибка. Подробности в логах."),
-                ephemeral=True,
-            )
+            await self._reply_failure(interaction, "Произошла непредвиденная ошибка. Подробности в логах.")
 
     # ------------------------------------------------------------------
     # /userinfo

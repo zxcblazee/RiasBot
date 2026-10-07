@@ -16,16 +16,21 @@ main.py — точка входа бота-администратора.
 from __future__ import annotations
 
 import traceback
+from pathlib import Path
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 import config
+from store import StoreRegistry
 from utils import error_embed, log
 
 # Список когов. Расширение функционала = новый файл + строка здесь.
-INITIAL_COCS = ("cogs.moderation", "cogs.utility", "cogs.info")
+INITIAL_COGS = ("cogs.moderation", "cogs.utility", "cogs.info")
+# DxD-надстройка: игры, экономика, RPG, аниме-контент, сервер и утилиты.
+DXD_COGS = ("cogs.games", "cogs.economy", "cogs.rpg", "cogs.anime",
+            "cogs.server", "cogs.utilities")
 
 
 class AdminBot(commands.Bot):
@@ -44,8 +49,13 @@ class AdminBot(commands.Bot):
 
     async def setup_hook(self) -> None:
         """Вызывается один раз перед подключением к Gateway."""
+        # --- Реестр JSON-хранилищ DxD (экономика/XP/настройки...) ----------
+        base_dir = getattr(config, "DATA_DIR", Path(__file__).resolve().parent)
+        self.dx_stores = StoreRegistry(base_dir)
+        await self.dx_stores.warm_up()
+
         # --- Загрузка когов -------------------------------------------------
-        for cog in INITIAL_COCS:
+        for cog in (*INITIAL_COGS, *DXD_COGS):
             try:
                 await self.load_extension(cog)
                 log.info("Ког загружен: %s", cog)
@@ -72,7 +82,7 @@ class AdminBot(commands.Bot):
             await self.change_presence(
                 activity=discord.Activity(
                     type=discord.ActivityType.watching,
-                    name="за порядком | /help",
+                    name="Рейтинговые игры | High School DxD | /help_dxd",
                 )
             )
         except Exception:

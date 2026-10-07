@@ -1,20 +1,10 @@
-# Environment
-.env
-*.env.local
-
-# Python
+# Python bytecode and cache
 __pycache__/
-*.py[cod]
-*$py.class
-venv/
-.venv/
+*.pyc
 
-# IDEs & Editors
-.vscode/
-.idea/
-*.swp
-*.swo
+# Environment variables
+.env
 
-# OS
-.DS_Store
-Thumbs.db
+# Logs
+bot.log
+*.log
